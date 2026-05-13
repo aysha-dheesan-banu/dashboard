@@ -180,6 +180,7 @@ async def read_users_me(token: str = Depends(oauth2_scheme)):
 @app.post("/sso/callback")
 async def sso_callback(data: dict):
     code = data.get("code")
+    code_verifier = data.get("code_verifier")
     import requests
     
     # Exchange code for token
@@ -189,7 +190,8 @@ async def sso_callback(data: dict):
         "code": code,
         "redirect_uri": os.getenv("SSO_REDIRECT_URI"),
         "client_id": SSO_CLIENT_ID,
-        "client_secret": SSO_CLIENT_SECRET
+        "client_secret": SSO_CLIENT_SECRET,
+        "code_verifier": code_verifier
     }
     
     resp = requests.post(token_url, data=payload)

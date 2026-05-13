@@ -18,8 +18,15 @@ export default function Callback() {
         return
       }
 
+      const verifier = localStorage.getItem('pkce_verifier')
+      localStorage.removeItem('oauth_state')
+      localStorage.removeItem('pkce_verifier')
+
       try {
-        const response = await axios.post('/api/sso/callback', { code })
+        const response = await axios.post('/api/sso/callback', { 
+          code,
+          code_verifier: verifier
+        })
         localStorage.setItem('token', response.data.access_token)
         window.location.href = '/dashboard'
       } catch (err: any) {

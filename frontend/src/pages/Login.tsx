@@ -26,9 +26,24 @@ export default function Login({ setAuth }: { setAuth: (val: boolean) => void }) 
     }
   }
 
+  const createPKCE = async () => {
+    const arr = new Uint8Array(48);
+    crypto.getRandomValues(arr);
+    const verifier = Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+    const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
+      .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    return { verifier, challenge };
+  }
+
   const signInWithSSO = async () => {
+    const { verifier, challenge } = await createPKCE();
     const state = Math.random().toString(36).substring(7)
+    
     localStorage.setItem('oauth_state', state)
+    localStorage.setItem('pkce_verifier', verifier)
     
     const params = new URLSearchParams({
       response_type: 'code',
@@ -36,6 +51,8 @@ export default function Login({ setAuth }: { setAuth: (val: boolean) => void }) 
       redirect_uri: 'https://dashbaord.dhilip.in/callback',
       scope: 'openid profile email',
       state: state,
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
     })
     
     window.location.href = `https://api.wytnet.com/oauth/authorize?${params}`
