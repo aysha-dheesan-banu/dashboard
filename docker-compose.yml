@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: fast-backend
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    volumes:
+      - ./backend/users.db:/app/users.db
+    restart: always
+
+  frontend:
+    build: ./frontend
+    container_name: react-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    restart: always
