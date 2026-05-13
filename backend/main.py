@@ -26,24 +26,29 @@ def get_jwks():
         return {"keys": []}
 
 def verify_sso_token(token: str) -> dict:
-    headers = jwt.get_unverified_header(token)
-    kid = headers.get("kid")
-    jwks = get_jwks()
-    key_data = next((k for k in jwks["keys"] if k["kid"] == kid), None)
-    
-    if not key_data:
-        raise HTTPException(status_code=401, detail="Invalid token key")
+    try:
+        headers = jwt.get_unverified_header(token)
+        kid = headers.get("kid")
+        jwks = get_jwks()
+        key_data = next((k for k in jwks["keys"] if k["kid"] == kid), None)
         
-    from jwt.algorithms import RSAAlgorithm
-    public_key = RSAAlgorithm.from_jwk(key_data)
-    
-    return jwt.decode(
-        token,
-        public_key,
-        algorithms=["RS256"],
-        issuer=SSO_ISSUER,
-        options={"verify_aud": False}
-    )
+        if not key_data:
+            print(f"DEBUG: No key found for kid: {kid}")
+            raise HTTPException(status_code=401, detail="Invalid token key")
+            
+        from jwt.algorithms import RSAAlgorithm
+        public_key = RSAAlgorithm.from_jwk(key_data)
+        
+        return jwt.decode(
+            token,
+            public_key,
+            algorithms=["RS256"],
+            issuer=SSO_ISSUER,
+            options={"verify_aud": False}
+        )
+    except Exception as e:
+        print(f"DEBUG: verify_sso_token failed: {str(e)}")
+        raise
 
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
@@ -155,10 +160,12 @@ async def read_users_me(token: str = Depends(oauth2_scheme)):
     try:
         # Check if it's an SSO token (usually long and has RS256 headers)
         unverified_payload = jwt.decode(token, options={"verify_signature": False})
+        iss = unverified_payload.get("iss")
+        print(f"DEBUG: Verifying token with iss: {iss} (Configured SSO_ISSUER: {SSO_ISSUER})")
         
-        if unverified_payload.get("iss") == SSO_ISSUER:
+        if iss == SSO_ISSUER:
             payload = verify_sso_token(token)
-            return {"username": payload.get("email"), "email": payload.get("email")}
+            return {"username": payload.get("email") or payload.get("sub"), "email": payload.get("email")}
             
         # Fallback to local token verification
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
