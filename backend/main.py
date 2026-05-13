@@ -179,26 +179,33 @@ async def read_users_me(token: str = Depends(oauth2_scheme)):
 
 @app.post("/sso/callback")
 async def sso_callback(data: dict):
-    code = data.get("code")
-    code_verifier = data.get("code_verifier")
-    import requests
-    
-    # Exchange code for token
-    token_url = f"{SSO_ISSUER}/oauth/token"
-    payload = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "redirect_uri": os.getenv("SSO_REDIRECT_URI"),
-        "client_id": SSO_CLIENT_ID,
-        "client_secret": SSO_CLIENT_SECRET,
-        "code_verifier": code_verifier
-    }
-    
-    resp = requests.post(token_url, data=payload)
-    if not resp.ok:
-        raise HTTPException(status_code=400, detail=f"SSO exchange failed: {resp.text}")
+    try:
+        code = data.get("code")
+        code_verifier = data.get("code_verifier")
+        import requests
         
-    return resp.json()
+        # Exchange code for token
+        token_url = f"{SSO_ISSUER}/oauth/token"
+        payload = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": os.getenv("SSO_REDIRECT_URI"),
+            "client_id": SSO_CLIENT_ID,
+            "client_secret": SSO_CLIENT_SECRET,
+            "code_verifier": code_verifier
+        }
+        
+        print(f"DEBUG: Attempting token exchange with {token_url}")
+        resp = requests.post(token_url, data=payload)
+        
+        if not resp.ok:
+            print(f"DEBUG: SSO Provider returned error: {resp.status_code} - {resp.text}")
+            raise HTTPException(status_code=400, detail=f"SSO exchange failed: {resp.text}")
+            
+        return resp.json()
+    except Exception as e:
+        print(f"DEBUG: Internal Server Error in sso_callback: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
