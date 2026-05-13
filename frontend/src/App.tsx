@@ -3,6 +3,7 @@ import Landing from './pages/Landing'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
+import Callback from './pages/Callback'
 import { useState, useEffect } from 'react'
 
 function App() {
@@ -18,6 +19,7 @@ function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login setAuth={setIsAuthenticated} />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/callback" element={<Callback />} />
       <Route 
         path="/dashboard" 
         element={isAuthenticated ? <Dashboard logout={logout} /> : <Navigate to="/login" />} 

@@ -13,6 +13,38 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# SSO Configuration
+SSO_CLIENT_ID = os.getenv("SSO_CLIENT_ID")
+SSO_CLIENT_SECRET = os.getenv("SSO_CLIENT_SECRET")
+SSO_ISSUER = os.getenv("SSO_ISSUER", "https://api.wytnet.com")
+
+def get_jwks():
+    import requests
+    try:
+        return requests.get(f"{SSO_ISSUER}/.well-known/jwks.json").json()
+    except Exception:
+        return {"keys": []}
+
+def verify_sso_token(token: str) -> dict:
+    headers = jwt.get_unverified_header(token)
+    kid = headers.get("kid")
+    jwks = get_jwks()
+    key_data = next((k for k in jwks["keys"] if k["kid"] == kid), None)
+    
+    if not key_data:
+        raise HTTPException(status_code=401, detail="Invalid token key")
+        
+    from jwt.algorithms import RSAAlgorithm
+    public_key = RSAAlgorithm.from_jwk(key_data)
+    
+    return jwt.decode(
+        token,
+        public_key,
+        algorithms=["RS256"],
+        issuer=SSO_ISSUER,
+        options={"verify_aud": False}
+    )
+
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-this-in-production")
 ALGORITHM = "HS256"
@@ -121,20 +153,50 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 @app.get("/users/me", response_model=User)
 async def read_users_me(token: str = Depends(oauth2_scheme)):
     try:
+        # Check if it's an SSO token (usually long and has RS256 headers)
+        unverified_payload = jwt.decode(token, options={"verify_signature": False})
+        
+        if unverified_payload.get("iss") == SSO_ISSUER:
+            payload = verify_sso_token(token)
+            return {"username": payload.get("email"), "email": payload.get("email")}
+            
+        # Fallback to local token verification
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
             raise HTTPException(status_code=401, detail="Invalid token")
-    except jwt.PyJWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+            
+        conn = get_db()
+        user = conn.execute("SELECT username, email FROM users WHERE username = ?", (username,)).fetchone()
+        conn.close()
+        
+        if user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {"username": user["username"], "email": user["email"]}
+        
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Token verification failed: {str(e)}")
+
+@app.post("/sso/callback")
+async def sso_callback(data: dict):
+    code = data.get("code")
+    import requests
     
-    conn = get_db()
-    user = conn.execute("SELECT username, email FROM users WHERE username = ?", (username,)).fetchone()
-    conn.close()
+    # Exchange code for token
+    token_url = f"{SSO_ISSUER}/oauth/token"
+    payload = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": os.getenv("SSO_REDIRECT_URI"),
+        "client_id": SSO_CLIENT_ID,
+        "client_secret": SSO_CLIENT_SECRET
+    }
     
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {"username": user["username"], "email": user["email"]}
+    resp = requests.post(token_url, data=payload)
+    if not resp.ok:
+        raise HTTPException(status_code=400, detail=f"SSO exchange failed: {resp.text}")
+        
+    return resp.json()
 
 if __name__ == "__main__":
     import uvicorn
